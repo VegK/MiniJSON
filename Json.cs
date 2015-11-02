@@ -30,6 +30,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
+using System.Runtime.Serialization;
 using System.Text;
 
 namespace MiniJSON
@@ -624,8 +626,54 @@ namespace MiniJSON
 				}
 				else
 				{
-					SerializeString(value.ToString());
+					if (!SerializeClass(value))
+						SerializeString(value.ToString());
 				}
+			}
+
+			bool SerializeClass(object value)
+			{
+				Type t = value.GetType();
+
+				var dataContactAttr = Attribute.GetCustomAttribute(t, typeof(DataContractAttribute));
+				bool serializable = (dataContactAttr != null);
+
+				var properties = t.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+				var objects = new Dictionary<string, object>();
+
+				for (int i = 0; i < properties.Length; i++)
+				{
+					var item = properties[i];
+					var itemName = item.Name;
+					var skip = serializable;
+
+					if (serializable)
+					{
+						var attrs = item.GetCustomAttributes(true);
+						foreach (object attr in attrs)
+						{
+							var at = attr as DataMemberAttribute;
+							if (at != null)
+							{
+								if (!string.IsNullOrEmpty(at.Name))
+									itemName = at.Name;
+								skip = false;
+								break;
+							}
+						}
+					}
+
+					if (skip)
+						continue;
+
+					var itemValue = item.GetGetMethod().Invoke(value, null);
+					objects.Add(itemName, itemValue);
+				}
+
+				var res = (objects.Count > 0);
+				if (res)
+					builder.Append(Serialize(objects));
+				return res;
 			}
 		}
 	}
