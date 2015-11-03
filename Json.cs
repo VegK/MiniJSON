@@ -27,6 +27,11 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Runtime.Serialization;
+
 namespace MiniJSON
 {
 	// Example usage:
@@ -71,6 +76,11 @@ namespace MiniJSON
 	/// </summary>
 	public static class Json
 	{
+		/// <summary>
+		/// Parses the string json into a value
+		/// </summary>
+		/// <param name="json">A JSON string.</param>
+		/// <returns>An List&lt;object&gt;, a Dictionary&lt;string, object&gt;, a double, an integer,a string, null, true, or false</returns>
 		public static object Deserialize(string json)
 		{
 			// save the string for debug information
@@ -80,6 +90,97 @@ namespace MiniJSON
 			}
 
 			return Parser.Parse(json);
+		}
+
+		private static bool _serialize = false;
+
+		public static T Deserialize<T>(string json) where T : class
+		{
+			if (json == null)
+				return default(T);
+
+			var parse = Parser.Parse(json);
+
+			var type = parse.GetType();
+			var attrType = typeof(DataContractAttribute);
+			var dataContactAttr = Attribute.GetCustomAttribute(type, attrType);
+			_serialize = (dataContactAttr != null);
+
+			var res = DeserializeObject(parse, typeof(T));
+
+			return res as T;
+		}
+
+
+		private static object DeserializeObject(object obj, Type type)
+		{
+			object res = null;
+
+			if (obj is List<object>)
+			{
+				res = Activator.CreateInstance(type);
+				Type genType = type.GetGenericArguments()[0];
+				var objList = obj as IList;
+				foreach (var item in objList)
+				{
+					var prs = DeserializeObject(item, genType);
+					if (prs != null)
+						(res as IList).Add(prs);
+				}
+			}
+			else if (obj is IDictionary<string, object>)
+			{
+				res = CreateObject(obj as IDictionary<string, object>, type);
+			}
+
+			return res;
+		}
+
+		private static object CreateObject(IDictionary<string, object> keyValue, Type type)
+		{
+			object res = null;
+
+			var properties = type.GetProperties();
+
+			res = Activator.CreateInstance(type);
+			foreach (var item in keyValue)
+			{
+				if (item.Value == null)
+					continue;
+
+				foreach (var property in properties)
+				{
+					if (!property.CanWrite)
+						continue;
+
+					var infoName = property.Name.ToLower();
+					var attrs = property.GetCustomAttributes(true);
+					var skip = _serialize;
+
+					foreach (object attr in attrs)
+					{
+						var at = attr as DataMemberAttribute;
+						if (at != null)
+						{
+							if (!string.IsNullOrEmpty(at.Name))
+								infoName = at.Name.ToLower();
+							skip = false;
+							break;
+						}
+					}
+
+					if (skip)
+						continue;
+
+					if (infoName == item.Key.ToLower())
+					{
+						var itemValue = DeserializeObject(item.Value, property.PropertyType) ?? item.Value;
+						property.GetSetMethod().Invoke(res, new object[] { itemValue });
+						break;
+					}
+				}
+			}
+			return res;
 		}
 
 		public static string Serialize(object obj)
