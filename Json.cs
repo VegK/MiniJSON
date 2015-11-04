@@ -94,7 +94,7 @@ namespace MiniJSON
 
 		private static bool _serialize = false;
 
-		public static T Deserialize<T>(string json) where T : class
+		public static T Deserialize<T>(string json)
 		{
 			if (json == null)
 				return default(T);
@@ -108,7 +108,10 @@ namespace MiniJSON
 
 			var res = DeserializeObject(parse, typeof(T));
 
-			return res as T;
+			if (res is T)
+				return (T)res;
+			else
+				return default(T);
 		}
 
 
